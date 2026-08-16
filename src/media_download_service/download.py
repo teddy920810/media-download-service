@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from yt_dlp import YoutubeDL
+from yt_dlp.utils import DownloadError
 
 from .inspection import MediaInspector, default_inspector
 from .policy import MAX_FILE_BYTES, UrlPolicyError
@@ -25,8 +26,11 @@ class YtDlpFileDownloader:
             "max_filesize": MAX_FILE_BYTES,
             "outtmpl": str(destination / "media.%(ext)s"),
         }
-        with YoutubeDL(options) as downloader:
-            code = downloader.download([url])
+        try:
+            with YoutubeDL(options) as downloader:
+                code = downloader.download([url])
+        except DownloadError as error:
+            raise UrlPolicyError("This provider did not make the selected format available for download.") from error
         if code != 0:
             raise UrlPolicyError("The provider could not prepare this format.")
 
