@@ -5,7 +5,7 @@ from typing import Any, Protocol
 
 from yt_dlp import YoutubeDL
 
-from .policy import MAX_DURATION_SECONDS, MAX_FILE_BYTES, MAX_HEIGHT, AcceptedUrl, UrlPolicyError, inspect_url
+from .policy import MAX_DURATION_SECONDS, MAX_FILE_BYTES, MAX_HEIGHT, UrlPolicyError, inspect_url
 
 
 class MetadataExtractor(Protocol):
