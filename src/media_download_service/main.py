@@ -1,7 +1,10 @@
+import asyncio
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 
-from .policy import MAX_DURATION_SECONDS, MAX_FILE_BYTES, MAX_HEIGHT, UrlPolicyError, inspect_url
+from .inspection import default_inspector
+from .policy import UrlPolicyError
 
 app = FastAPI(title="Media Download Service", docs_url=None, redoc_url=None)
 
@@ -16,16 +19,8 @@ def healthcheck() -> dict[str, str]:
 
 
 @app.post("/v1/inspect")
-def inspect(request: InspectRequest) -> dict[str, int | str]:
+async def inspect(request: InspectRequest) -> dict[str, object]:
     try:
-        accepted = inspect_url(str(request.url))
+        return await asyncio.to_thread(default_inspector.inspect, str(request.url))
     except UrlPolicyError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-
-    return {
-        "platform": accepted.platform,
-        "url": accepted.url,
-        "maxHeight": MAX_HEIGHT,
-        "maxDurationSeconds": MAX_DURATION_SECONDS,
-        "maxFileBytes": MAX_FILE_BYTES,
-    }
