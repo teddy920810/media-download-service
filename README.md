@@ -21,6 +21,8 @@ python -m venv .venv
 
 On Windows, activate the virtual environment using the platform shell before running the same Python commands. The application itself is platform-independent and is deployed in Docker.
 
+Copy `.env.example` to `.env` and set only local credentials. The R2 bucket for this product is `download`; it must remain private. Never commit either environment file.
+
 ## Deployment model
 
 Cloud Run hosts a small authenticated control service. It validates a signed job request and starts a Cloud Run Job that performs the download, uploads the result to private R2, then updates the application database. The browser communicates only with the web application; it never calls this service directly.
