@@ -9,6 +9,7 @@ from yt_dlp.utils import DownloadError
 
 from .inspection import MediaInspector, default_inspector
 from .policy import MAX_FILE_BYTES, UrlPolicyError
+from .proxy import build_decodo_proxy_url
 
 
 class FileDownloader(Protocol):
@@ -16,6 +17,9 @@ class FileDownloader(Protocol):
 
 
 class YtDlpFileDownloader:
+    def __init__(self, proxy_url: str | None = None):
+        self.proxy_url = proxy_url
+
     def download(self, url: str, format_id: str, destination: Path) -> Path:
         destination.mkdir(parents=True, exist_ok=True)
         options = {
@@ -26,6 +30,8 @@ class YtDlpFileDownloader:
             "max_filesize": MAX_FILE_BYTES,
             "outtmpl": str(destination / "media.%(ext)s"),
         }
+        if self.proxy_url:
+            options["proxy"] = self.proxy_url
         try:
             with YoutubeDL(options) as downloader:
                 code = downloader.download([url])
@@ -74,4 +80,7 @@ class TrialDownloadWorker:
         return {"mp4": "video/mp4", "webm": "video/webm", "mkv": "video/x-matroska"}.get(container, "application/octet-stream")
 
 
-default_download_worker = TrialDownloadWorker(inspector=default_inspector, downloader=YtDlpFileDownloader())
+default_download_worker = TrialDownloadWorker(
+    inspector=default_inspector,
+    downloader=YtDlpFileDownloader(proxy_url=build_decodo_proxy_url()),
+)
