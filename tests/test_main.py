@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from yt_dlp.utils import DownloadError
 
 from media_download_service import main
 
@@ -23,6 +24,24 @@ def test_inspect_endpoint_requires_internal_token(monkeypatch):
         json={"url": "https://www.youtube.com/watch?v=abc"},
     )
     assert response.status_code == 401
+
+
+def test_inspect_endpoint_hides_provider_verification_details(monkeypatch):
+    class RejectingInspector:
+        def inspect(self, url):
+            raise DownloadError("provider authentication details")
+
+    monkeypatch.setattr(main, "get_settings", lambda: Settings())
+    monkeypatch.setattr(main, "default_inspector", RejectingInspector())
+    response = TestClient(main.app).post(
+        "/v1/inspect",
+        headers={"X-Internal-Service-Token": "test-token"},
+        json={"url": "https://www.youtube.com/watch?v=abc"},
+    )
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "This provider is temporarily requiring additional verification. Please try another link later."
+    }
 
 
 def test_download_endpoint_returns_temporary_url(monkeypatch):

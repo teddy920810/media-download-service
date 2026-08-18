@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, HttpUrl
+from yt_dlp.utils import DownloadError
 
 from .config import Settings, get_settings
 from .download import default_download_worker
@@ -41,6 +42,11 @@ async def inspect(
         return await asyncio.to_thread(default_inspector.inspect, str(request.url))
     except UrlPolicyError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except DownloadError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="This provider is temporarily requiring additional verification. Please try another link later.",
+        ) from error
 
 
 @app.post("/v1/downloads")
