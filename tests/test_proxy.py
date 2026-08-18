@@ -16,6 +16,50 @@ def test_builds_an_encoded_http_proxy_url():
     assert result == "http://account%20user:pass%40word%3Awith%2Fslash@us.decodo.com:10001"
 
 
+def test_builds_a_country_scoped_custom_sticky_session():
+    result = build_decodo_proxy_url(
+        {
+            "DECODO_USERNAME": "account",
+            "DECODO_PASSWORD": "password",
+            "DECODO_PROXY_COUNTRY": "us",
+            "DECODO_PROXY_SESSION": "trial123",
+            "DECODO_PROXY_SESSION_DURATION": "30",
+        }
+    )
+
+    assert result == (
+        "http://user-account-country-us-session-trial123-sessionduration-30:password"
+        "@gate.decodo.com:7000"
+    )
+
+
+@pytest.mark.parametrize("session_id", ["contains-dash", "space here", "", "a" * 33])
+def test_rejects_invalid_custom_session_ids(session_id):
+    source = {
+        "DECODO_USERNAME": "account",
+        "DECODO_PASSWORD": "password",
+        "DECODO_PROXY_SESSION": session_id,
+    }
+    if not session_id:
+        assert build_decodo_proxy_url(source) == "http://account:password@us.decodo.com:10001"
+        return
+
+    with pytest.raises(RuntimeError, match="DECODO_PROXY_SESSION"):
+        build_decodo_proxy_url(source)
+
+
+def test_rejects_invalid_custom_session_duration():
+    with pytest.raises(RuntimeError, match="DECODO_PROXY_SESSION_DURATION"):
+        build_decodo_proxy_url(
+            {
+                "DECODO_USERNAME": "account",
+                "DECODO_PASSWORD": "password",
+                "DECODO_PROXY_SESSION": "trial123",
+                "DECODO_PROXY_SESSION_DURATION": "1441",
+            }
+        )
+
+
 def test_proxy_is_optional_for_local_development():
     assert build_decodo_proxy_url({}) is None
 
