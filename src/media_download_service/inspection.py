@@ -19,6 +19,7 @@ class YtDlpMetadataExtractor:
 
     def extract(self, url: str) -> dict[str, Any]:
         options = {
+            "extractor_args": {"youtube": {"player_client": ["mweb"]}},
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,

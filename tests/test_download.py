@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from media_download_service.download import TrialDownloadWorker
+from media_download_service.download import TrialDownloadWorker, YtDlpFileDownloader
 from media_download_service.inspection import MediaInspector
 from media_download_service.policy import UrlPolicyError
 
@@ -28,6 +28,31 @@ class StubDownloader:
         output = destination / "media.mp4"
         output.write_bytes(b"video")
         return output
+
+
+def test_youtube_download_uses_the_po_token_compatible_client(monkeypatch, tmp_path):
+    captured = {}
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            captured.update(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def download(self, _urls):
+            (tmp_path / "media.mp4").write_bytes(b"video")
+            return 0
+
+    monkeypatch.setattr("media_download_service.download.YoutubeDL", FakeYoutubeDL)
+    YtDlpFileDownloader("http://proxy.example").download(
+        "https://www.youtube.com/watch?v=abc", "18", tmp_path
+    )
+
+    assert captured["extractor_args"] == {"youtube": {"player_client": ["mweb"]}}
 
 
 def test_downloads_only_an_audio_inclusive_format(tmp_path):

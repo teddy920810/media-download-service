@@ -23,6 +23,7 @@ class YtDlpFileDownloader:
     def download(self, url: str, format_id: str, destination: Path) -> Path:
         destination.mkdir(parents=True, exist_ok=True)
         options = {
+            "extractor_args": {"youtube": {"player_client": ["mweb"]}},
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,

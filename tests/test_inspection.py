@@ -1,6 +1,6 @@
 import pytest
 
-from media_download_service.inspection import MediaInspector
+from media_download_service.inspection import MediaInspector, YtDlpMetadataExtractor
 from media_download_service.policy import MAX_FILE_BYTES, UrlPolicyError
 
 
@@ -10,6 +10,29 @@ class StubExtractor:
 
     def extract(self, url):
         return self.response
+
+
+def test_youtube_inspection_uses_the_po_token_compatible_client(monkeypatch):
+    captured = {}
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            captured.update(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def extract_info(self, _url, download):
+            assert download is False
+            return {"duration": 30, "formats": []}
+
+    monkeypatch.setattr("media_download_service.inspection.YoutubeDL", FakeYoutubeDL)
+    YtDlpMetadataExtractor("http://proxy.example").extract("https://www.youtube.com/watch?v=abc")
+
+    assert captured["extractor_args"] == {"youtube": {"player_client": ["mweb"]}}
 
 
 def test_returns_only_trial_eligible_formats():
