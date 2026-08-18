@@ -32,7 +32,11 @@ def healthcheck() -> dict[str, str]:
 
 
 @app.post("/v1/inspect")
-async def inspect(request: InspectRequest) -> dict[str, object]:
+async def inspect(
+    request: InspectRequest,
+    x_internal_service_token: str | None = Header(default=None),
+) -> dict[str, object]:
+    require_internal_token(x_internal_service_token)
     try:
         return await asyncio.to_thread(default_inspector.inspect, str(request.url))
     except UrlPolicyError as error:
@@ -44,9 +48,7 @@ async def create_download(
     request: DownloadRequest,
     x_internal_service_token: str | None = Header(default=None),
 ) -> dict[str, object]:
-    settings = get_settings()
-    if not x_internal_service_token or not secrets.compare_digest(x_internal_service_token, settings.internal_service_token):
-        raise HTTPException(status_code=401, detail="Unauthorized service request.")
+    settings = require_internal_token(x_internal_service_token)
 
     try:
         return await asyncio.to_thread(_download_and_store, request, settings)
@@ -54,6 +56,13 @@ async def create_download(
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception:
         raise HTTPException(status_code=502, detail="Unable to prepare this download right now.") from None
+
+
+def require_internal_token(token: str | None) -> Settings:
+    settings = get_settings()
+    if not token or not secrets.compare_digest(token, settings.internal_service_token):
+        raise HTTPException(status_code=401, detail="Unauthorized service request.")
+    return settings
 
 
 def _download_and_store(request: DownloadRequest, settings: Settings) -> dict[str, object]:

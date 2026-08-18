@@ -16,6 +16,15 @@ def test_download_endpoint_requires_internal_token(monkeypatch):
     assert response.status_code == 401
 
 
+def test_inspect_endpoint_requires_internal_token(monkeypatch):
+    monkeypatch.setattr(main, "get_settings", lambda: Settings())
+    response = TestClient(main.app).post(
+        "/v1/inspect",
+        json={"url": "https://www.youtube.com/watch?v=abc"},
+    )
+    assert response.status_code == 401
+
+
 def test_download_endpoint_returns_temporary_url(monkeypatch):
     monkeypatch.setattr(main, "get_settings", lambda: Settings())
     monkeypatch.setattr(
