@@ -1,5 +1,11 @@
 # Media Download Service
 
+The local control plane returns `202/queued` immediately, then processes `queued → processing → ready/failed`. Reusing the same job ID with the same input is idempotent; reusing it for different input is rejected.
+
+Metadata inspection may use Decodo through `INSPECT_PROXY` or the `DECODO_*` settings. Media transfer is direct by default. Proxy fallback is available only when `DOWNLOAD_PROXY_FALLBACK_ENABLED=true`, and only for a narrow set of retryable provider responses. Operational events contain route/outcome/byte counts, never source URLs or proxy credentials.
+
+The bundled in-memory job store is for local and single-process verification. A durable store and external queue are required before multi-instance production. Cloud Tasks, Cloud Run Jobs, IAM, and deployment remain explicit operator steps.
+
 The private, containerized backend for the Web Video Downloader trial.
 
 ## MVP boundaries
@@ -13,16 +19,16 @@ The private, containerized backend for the Web Video Downloader trial.
 
 ```sh
 python -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -e ".[dev]"
-.venv/bin/python -m pytest
-.venv/bin/python -m uvicorn media_download_service.main:app --reload
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+python -m pytest
+python -m uvicorn media_download_service.main:app --reload
 ```
 
-On Windows, activate the virtual environment using the platform shell before running the same Python commands. The application itself is platform-independent and is deployed in Docker.
+Activate the virtual environment using your platform shell before running the commands. The application itself is platform-independent and is deployed in Docker.
 
 Copy `.env.example` to `.env` and set only local credentials. The R2 bucket for this product is `download`; it must remain private. Never commit either environment file.
 
 ## Deployment model
 
-Cloud Run hosts a small authenticated control service. It validates a signed job request and starts a Cloud Run Job that performs the download, uploads the result to private R2, then updates the application database. The browser communicates only with the web application; it never calls this service directly.
+The browser communicates only with the web application; it never calls this service directly. A production deployment should place the authenticated control service on Cloud Run and hand work to a durable queue/worker boundary. This repository does not create Cloud Tasks, Cloud Run Jobs, IAM bindings, or durable job storage; those remain production prerequisites.

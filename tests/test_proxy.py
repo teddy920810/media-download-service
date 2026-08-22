@@ -1,6 +1,6 @@
 import pytest
 
-from media_download_service.proxy import build_decodo_proxy_url
+from media_download_service.proxy import build_decodo_proxy_url, load_proxy_configuration
 
 
 def test_builds_an_encoded_http_proxy_url():
@@ -79,3 +79,44 @@ def test_rejects_untrusted_proxy_hosts(host):
                 "DECODO_PROXY_HOST": host,
             }
         )
+
+
+def test_inspection_uses_decodo_but_download_is_direct_by_default():
+    configuration = load_proxy_configuration(
+        {"DECODO_USERNAME": "account", "DECODO_PASSWORD": "password"}
+    )
+
+    assert configuration.inspect_proxy_url == "http://account:password@us.decodo.com:10001"
+    assert configuration.download_proxy_url is None
+    assert configuration.allow_download_proxy_fallback is False
+
+
+def test_download_proxy_fallback_requires_an_explicit_opt_in():
+    configuration = load_proxy_configuration(
+        {
+            "DECODO_USERNAME": "account",
+            "DECODO_PASSWORD": "password",
+            "DOWNLOAD_PROXY_FALLBACK_ENABLED": "true",
+        }
+    )
+
+    assert configuration.download_proxy_url == "http://account:password@us.decodo.com:10001"
+    assert configuration.allow_download_proxy_fallback is True
+
+
+def test_phase_specific_proxy_urls_are_validated():
+    configuration = load_proxy_configuration(
+        {
+            "INSPECT_PROXY": "http://inspect:secret@sg.decodo.com:10001",
+            "DOWNLOAD_PROXY": "http://download:secret@us.decodo.com:10002",
+            "DOWNLOAD_PROXY_FALLBACK_ENABLED": "yes",
+        }
+    )
+
+    assert configuration.inspect_proxy_url == "http://inspect:secret@sg.decodo.com:10001"
+    assert configuration.download_proxy_url == "http://download:secret@us.decodo.com:10002"
+
+
+def test_rejects_phase_proxy_urls_outside_decodo():
+    with pytest.raises(RuntimeError, match="approved Decodo endpoint"):
+        load_proxy_configuration({"INSPECT_PROXY": "http://user:secret@example.com:8080"})

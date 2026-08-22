@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from collections.abc import Mapping
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 
 APPROVED_DECODO_HOSTS = {
@@ -15,6 +16,49 @@ APPROVED_DECODO_HOSTS = {
 
 CUSTOM_SESSION_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,32}$")
 COUNTRY_PATTERN = re.compile(r"^[a-z]{2}$")
+
+
+@dataclass(frozen=True)
+class ProxyConfiguration:
+    inspect_proxy_url: str | None
+    download_proxy_url: str | None
+    allow_download_proxy_fallback: bool
+
+
+def _configured_proxy_url(name: str, source: Mapping[str, str]) -> str | None:
+    value = source.get(name, "").strip()
+    if not value:
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in APPROVED_DECODO_HOSTS:
+        raise RuntimeError(f"{name} must use an approved Decodo endpoint.")
+    if not parsed.username or not parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise RuntimeError(f"{name} must be a credentialed proxy URL without a path, query, or fragment.")
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise RuntimeError(f"{name} must use a valid port.") from error
+    if port is None:
+        raise RuntimeError(f"{name} must use a valid port.")
+    return value
+
+
+def _enabled(name: str, source: Mapping[str, str]) -> bool:
+    value = source.get(name, "false").strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off", ""}:
+        return False
+    raise RuntimeError(f"{name} must be true or false.")
+
+
+def load_proxy_configuration(source: Mapping[str, str] = os.environ) -> ProxyConfiguration:
+    shared_decodo_url = build_decodo_proxy_url(source)
+    inspect_proxy_url = _configured_proxy_url("INSPECT_PROXY", source) or shared_decodo_url
+    allow_fallback = _enabled("DOWNLOAD_PROXY_FALLBACK_ENABLED", source)
+    configured_download_url = _configured_proxy_url("DOWNLOAD_PROXY", source)
+    download_proxy_url = configured_download_url or (shared_decodo_url if allow_fallback else None)
+    return ProxyConfiguration(inspect_proxy_url, download_proxy_url, allow_fallback)
 
 
 def build_decodo_proxy_url(source: Mapping[str, str] = os.environ) -> str | None:
