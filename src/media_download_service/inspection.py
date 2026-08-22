@@ -6,7 +6,7 @@ from typing import Any, Protocol
 from yt_dlp import YoutubeDL
 
 from .policy import MAX_DURATION_SECONDS, MAX_FILE_BYTES, MAX_HEIGHT, UrlPolicyError, inspect_url
-from .proxy import build_decodo_proxy_url
+from .proxy import load_proxy_configuration
 
 
 class MetadataExtractor(Protocol):
@@ -25,6 +25,8 @@ class YtDlpMetadataExtractor:
             "noplaylist": True,
             "skip_download": True,
             "extract_flat": False,
+            "socket_timeout": 20,
+            "extractor_retries": 2,
         }
         if self.proxy_url:
             options["proxy"] = self.proxy_url
@@ -105,4 +107,6 @@ class MediaInspector:
         return sorted(eligible, key=lambda item: (item["height"], item["hasAudio"]), reverse=True)
 
 
-default_inspector = MediaInspector(extractor=YtDlpMetadataExtractor(proxy_url=build_decodo_proxy_url()))
+default_inspector = MediaInspector(
+    extractor=YtDlpMetadataExtractor(proxy_url=load_proxy_configuration().inspect_proxy_url)
+)

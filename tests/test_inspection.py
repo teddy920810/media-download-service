@@ -33,6 +33,8 @@ def test_youtube_inspection_uses_the_po_token_compatible_client(monkeypatch):
     YtDlpMetadataExtractor("http://proxy.example").extract("https://www.youtube.com/watch?v=abc")
 
     assert captured["extractor_args"] == {"youtube": {"player_client": ["mweb"]}}
+    assert captured["socket_timeout"] == 20
+    assert captured["extractor_retries"] == 2
 
 
 def test_returns_only_trial_eligible_formats():
