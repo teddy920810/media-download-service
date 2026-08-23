@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from urllib.parse import urlparse, parse_qs
+from ipaddress import ip_address
+from urllib.parse import parse_qs, urlparse
 
 MAX_DURATION_SECONDS = 10 * 60
 MAX_FILE_BYTES = 500 * 1024 * 1024
@@ -28,9 +29,15 @@ def inspect_url(raw_url: str) -> AcceptedUrl:
         raise UrlPolicyError("Please enter a valid HTTPS URL.")
 
     hostname = parsed.hostname.lower()
-    platform = next((name for name, hosts in PLATFORM_HOSTS.items() if hostname in hosts), None)
-    if platform is None:
-        raise UrlPolicyError("This platform is not supported yet.")
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        raise UrlPolicyError("Please enter a public HTTPS URL.")
+    try:
+        if not ip_address(hostname).is_global:
+            raise UrlPolicyError("Please enter a public HTTPS URL.")
+    except ValueError:
+        pass
+
+    platform = next((name for name, hosts in PLATFORM_HOSTS.items() if hostname in hosts), "other")
 
     if platform == "youtube" and (parsed.path == "/playlist" or "list" in parse_qs(parsed.query)):
         raise UrlPolicyError("Playlists are not available in the free trial.")

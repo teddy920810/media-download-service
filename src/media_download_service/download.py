@@ -9,7 +9,7 @@ from yt_dlp.utils import DownloadError
 
 from .inspection import MediaInspector, default_inspector
 from .observability import observe_transfer
-from .policy import MAX_FILE_BYTES, UrlPolicyError
+from .policy import MAX_DURATION_SECONDS, MAX_FILE_BYTES, MAX_HEIGHT, UrlPolicyError
 from .proxy import load_proxy_configuration
 
 
@@ -125,18 +125,20 @@ class TrialDownloadWorker:
 
     def download(self, url: str, format_id: str, destination: Path) -> dict[str, Any]:
         media = self.inspector.inspect(url)
-        allowed = next(
-            (
-                item
-                for item in media["formats"]
-                if item["formatId"] == format_id and item["hasAudio"]
-            ),
-            None,
-        )
+        allowed = next((item for item in media["formats"] if item["formatId"] == format_id), None)
         if allowed is None:
-            raise UrlPolicyError("Choose an available format that includes audio.")
+            raise UrlPolicyError("Choose an available media format.")
+        duration = media["durationSeconds"]
+        if duration is None or duration > MAX_DURATION_SECONDS:
+            raise UrlPolicyError("Web-trial videos must be 10 minutes or shorter.")
+        height = allowed["height"]
+        if isinstance(height, int) and height > MAX_HEIGHT:
+            raise UrlPolicyError("Web-trial video formats must be 720p or lower.")
+        selected_format = format_id
+        if allowed["hasVideo"] and not allowed["hasAudio"]:
+            selected_format = f"{format_id}+bestaudio/best"
         try:
-            output = self.downloader.download(media["sourceUrl"], format_id, destination)
+            output = self.downloader.download(media["sourceUrl"], selected_format, destination)
         except DownloadError as error:
             raise UrlPolicyError("This provider did not make the selected format available for download.") from error
         return {
@@ -148,7 +150,13 @@ class TrialDownloadWorker:
 
     @staticmethod
     def _content_type(container: str) -> str:
-        return {"mp4": "video/mp4", "webm": "video/webm", "mkv": "video/x-matroska"}.get(container, "application/octet-stream")
+        return {
+            "mp4": "video/mp4",
+            "webm": "video/webm",
+            "mkv": "video/x-matroska",
+            "m4a": "audio/mp4",
+            "mp3": "audio/mpeg",
+        }.get(container, "application/octet-stream")
 
 
 proxy_configuration = load_proxy_configuration()
