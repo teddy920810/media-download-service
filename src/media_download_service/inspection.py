@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from yt_dlp import YoutubeDL
+from yt_dlp.utils import DownloadError
 
-from .policy import MAX_DURATION_SECONDS, MAX_FILE_BYTES, MAX_HEIGHT, UrlPolicyError, inspect_url
+from .policy import UrlPolicyError, inspect_url
 from .proxy import load_proxy_configuration
 
 
@@ -18,8 +19,18 @@ class YtDlpMetadataExtractor:
         self.proxy_url = proxy_url
 
     def extract(self, url: str) -> dict[str, Any]:
-        options = {
-            "extractor_args": {"youtube": {"player_client": ["mweb"]}},
+        try:
+            result = self._extract(url, force_mweb=True)
+        except DownloadError as error:
+            if "requested format is not available" not in str(error).lower():
+                raise
+            result = self._extract(url, force_mweb=False)
+        if not isinstance(result, dict):
+            raise UrlPolicyError("The media provider did not return a video.")
+        return result
+
+    def _extract(self, url: str, *, force_mweb: bool) -> object:
+        options: dict[str, object] = {
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
@@ -28,13 +39,12 @@ class YtDlpMetadataExtractor:
             "socket_timeout": 20,
             "extractor_retries": 2,
         }
+        if force_mweb:
+            options["extractor_args"] = {"youtube": {"player_client": ["mweb"]}}
         if self.proxy_url:
             options["proxy"] = self.proxy_url
         with YoutubeDL(options) as downloader:
-            result = downloader.extract_info(url, download=False)
-        if not isinstance(result, dict):
-            raise UrlPolicyError("The media provider did not return a video.")
-        return result
+            return downloader.extract_info(url, download=False)
 
 
 @dataclass(frozen=True)
@@ -47,14 +57,14 @@ class MediaInspector:
         self._validate_metadata(metadata)
         formats = self._formats(metadata)
         if not formats:
-            raise UrlPolicyError("No trial-eligible video format is available for this link.")
+            raise UrlPolicyError("No downloadable media format is available for this link.")
 
         return {
             "platform": accepted.platform,
             "sourceUrl": accepted.url,
             "title": self._text(metadata.get("title"), "Untitled video"),
             "thumbnail": self._optional_text(metadata.get("thumbnail")),
-            "durationSeconds": int(metadata["duration"]),
+            "durationSeconds": self._duration(metadata.get("duration")),
             "formats": formats,
         }
 
@@ -67,44 +77,58 @@ class MediaInspector:
         return value.strip() if isinstance(value, str) and value.strip() else None
 
     @staticmethod
+    def _duration(value: object) -> int | None:
+        return int(value) if isinstance(value, (int, float)) and value > 0 else None
+
+    @staticmethod
     def _validate_metadata(metadata: dict[str, Any]) -> None:
         if metadata.get("is_live"):
             raise UrlPolicyError("Live streams are not available in the free trial.")
-        duration = metadata.get("duration")
-        if not isinstance(duration, (int, float)) or duration <= 0:
-            raise UrlPolicyError("This video does not have a supported duration.")
-        if duration > MAX_DURATION_SECONDS:
-            raise UrlPolicyError("Free-trial videos must be 10 minutes or shorter.")
 
     @staticmethod
     def _formats(metadata: dict[str, Any]) -> list[dict[str, Any]]:
-        eligible: list[dict[str, Any]] = []
+        available: list[dict[str, Any]] = []
         for source in metadata.get("formats", []):
-            if not isinstance(source, dict) or source.get("vcodec") in (None, "none"):
+            if not isinstance(source, dict):
                 continue
-            height = source.get("height")
-            if not isinstance(height, int) or not 0 < height <= MAX_HEIGHT:
+            has_video = source.get("vcodec") not in (None, "none")
+            has_audio = source.get("acodec") not in (None, "none")
+            if not has_video and not has_audio:
                 continue
             format_id = source.get("format_id")
             extension = source.get("ext")
             if not isinstance(format_id, str) or not isinstance(extension, str):
                 continue
+            height_value = source.get("height")
+            height = height_value if has_video and isinstance(height_value, int) and height_value > 0 else None
+            bitrate_value = source.get("abr")
+            audio_bitrate = int(bitrate_value) if has_audio and isinstance(bitrate_value, (int, float)) and bitrate_value > 0 else None
             estimated_size = source.get("filesize") or source.get("filesize_approx")
-            if isinstance(estimated_size, (int, float)) and estimated_size > MAX_FILE_BYTES:
-                continue
-            has_audio = source.get("acodec") not in (None, "none")
-            label = source.get("format_note") or f"{height}p"
-            eligible.append(
+            label = source.get("format_note")
+            if not isinstance(label, str) or not label.strip():
+                label = f"{height}p" if height else f"{audio_bitrate} kbps audio" if audio_bitrate else "Audio"
+            available.append(
                 {
                     "formatId": format_id,
                     "label": str(label),
                     "container": extension,
                     "height": height,
+                    "hasVideo": has_video,
                     "hasAudio": has_audio,
+                    "audioBitrateKbps": audio_bitrate,
                     "estimatedSizeBytes": int(estimated_size) if isinstance(estimated_size, (int, float)) else None,
                 }
             )
-        return sorted(eligible, key=lambda item: (item["height"], item["hasAudio"]), reverse=True)
+        return sorted(
+            available,
+            key=lambda item: (
+                item["hasVideo"],
+                item["height"] or 0,
+                item["hasAudio"],
+                item["audioBitrateKbps"] or 0,
+            ),
+            reverse=True,
+        )
 
 
 default_inspector = MediaInspector(

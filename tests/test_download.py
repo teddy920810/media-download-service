@@ -72,11 +72,47 @@ def test_downloads_only_an_audio_inclusive_format(tmp_path):
     assert result["sizeBytes"] == 5
 
 
-def test_rejects_video_only_format(tmp_path):
-    worker = TrialDownloadWorker(MediaInspector(StubExtractor()), StubDownloader())
+def test_combines_video_only_format_with_the_best_available_audio(tmp_path):
+    downloader = StubDownloader()
+    worker = TrialDownloadWorker(MediaInspector(StubExtractor()), downloader)
 
-    with pytest.raises(UrlPolicyError, match="includes audio"):
-        worker.download("https://www.youtube.com/watch?v=abc", "video-only", tmp_path)
+    worker.download("https://www.youtube.com/watch?v=abc", "video-only", tmp_path)
+
+    assert downloader.calls == [
+        ("https://www.youtube.com/watch?v=abc", "video-only+bestaudio/best")
+    ]
+
+
+def test_rejects_web_download_when_video_exceeds_720p(tmp_path):
+    class HighResolutionExtractor:
+        def extract(self, url):
+            return {
+                "duration": 30,
+                "formats": [
+                    {"format_id": "1080", "height": 1080, "ext": "mp4", "vcodec": "avc", "acodec": "aac"}
+                ],
+            }
+
+    worker = TrialDownloadWorker(MediaInspector(HighResolutionExtractor()), StubDownloader())
+
+    with pytest.raises(UrlPolicyError, match="720p"):
+        worker.download("https://www.youtube.com/watch?v=abc", "1080", tmp_path)
+
+
+def test_rejects_web_download_when_video_is_longer_than_ten_minutes(tmp_path):
+    class LongVideoExtractor:
+        def extract(self, url):
+            return {
+                "duration": 601,
+                "formats": [
+                    {"format_id": "18", "height": 360, "ext": "mp4", "vcodec": "avc", "acodec": "aac"}
+                ],
+            }
+
+    worker = TrialDownloadWorker(MediaInspector(LongVideoExtractor()), StubDownloader())
+
+    with pytest.raises(UrlPolicyError, match="10 minutes"):
+        worker.download("https://www.youtube.com/watch?v=abc", "18", tmp_path)
 
 
 class RecordingDownloader:
