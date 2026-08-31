@@ -5,9 +5,10 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import FastAPI, Header, HTTPException, Response
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 from yt_dlp.utils import DownloadError
 
+from .background import ReplicateBackgroundRemover
 from .config import Settings, get_settings
 from .download import default_download_worker
 from .inspection import default_inspector
@@ -28,6 +29,21 @@ class DownloadRequest(BaseModel):
     jobId: UUID
     url: HttpUrl
     formatId: str
+
+
+class BackgroundRemovalRequest(BaseModel):
+    jobId: UUID
+    inputKey: str = Field(
+        pattern=r"^tool-inputs/background-remover/[0-9a-f-]{36}\.(?:jpg|png|webp)$",
+        max_length=160,
+    )
+
+    @model_validator(mode="after")
+    def require_job_owned_input(self) -> "BackgroundRemovalRequest":
+        object_id = self.inputKey.rsplit("/", 1)[-1].split(".", 1)[0]
+        if object_id != str(self.jobId):
+            raise ValueError("The uploaded image must belong to this job.")
+        return self
 
 
 @app.get("/healthz")
@@ -88,6 +104,36 @@ async def get_download(
     return job.public()
 
 
+@app.post("/v1/background-removals")
+async def create_background_removal(
+    request: BackgroundRemovalRequest,
+    x_internal_service_token: str | None = Header(default=None),
+) -> dict[str, object]:
+    settings = require_internal_token(x_internal_service_token)
+    if not settings.replicate_api_token:
+        raise HTTPException(status_code=503, detail="The background removal service is not configured yet.")
+    try:
+        result = await asyncio.to_thread(_remove_background_and_store, request, settings)
+        observe_transfer(
+            {
+                "operation": "background_remove",
+                "route": "service",
+                "outcome": "success",
+                "sizeBytes": result["sizeBytes"],
+            }
+        )
+        return result
+    except FileNotFoundError as error:
+        observe_transfer({"operation": "background_remove", "route": "service", "outcome": "missing_input"})
+        raise HTTPException(status_code=404, detail="The uploaded image was not found.") from error
+    except Exception as error:
+        observe_transfer({"operation": "background_remove", "route": "service", "outcome": "provider_error"})
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to remove the image background right now.",
+        ) from error
+
+
 def require_internal_token(token: str | None) -> Settings:
     settings = get_settings()
     if not token or not secrets.compare_digest(token, settings.internal_service_token):
@@ -109,3 +155,27 @@ def _download_and_store(request: DownloadRequest, settings: Settings) -> dict[st
             "downloadUrl": storage.temporary_download_url(object_key),
             "sizeBytes": result["sizeBytes"],
         }
+
+
+def _remove_background_and_store(
+    request: BackgroundRemovalRequest,
+    settings: Settings,
+) -> dict[str, object]:
+    storage = R2Storage(settings)
+    if not storage.exists(request.inputKey):
+        raise FileNotFoundError(request.inputKey)
+    result_key = f"tool-results/background-remover/{request.jobId}.png"
+    if storage.exists(result_key):
+        size = storage.size(result_key)
+    else:
+        remover = ReplicateBackgroundRemover(settings.replicate_api_token or "")
+        content = remover.remove(storage.temporary_input_url(request.inputKey))
+        storage.upload_bytes(content, result_key, "image/png")
+        size = len(content)
+    return {
+        "jobId": str(request.jobId),
+        "status": "ready",
+        "objectKey": result_key,
+        "downloadUrl": storage.temporary_download_url(result_key),
+        "sizeBytes": size,
+    }
