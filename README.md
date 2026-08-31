@@ -8,6 +8,8 @@ The bundled in-memory job store is for local and single-process verification. A 
 
 The private, containerized backend for the Web Video Downloader trial.
 
+The same private service also exposes an authenticated background-removal boundary for Streamnest tools. It accepts only private R2 object keys created for a matching job ID, runs the pinned `851-labs/background-remover` Replicate model, and copies the PNG result back to private R2 before returning a short-lived download URL. `REPLICATE_API_TOKEN` is optional for download-only deployments and required only for this tool endpoint.
+
 ## MVP boundaries
 
 - Supports public, individual URLs from YouTube, TikTok, and Instagram.

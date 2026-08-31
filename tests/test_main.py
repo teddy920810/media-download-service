@@ -7,6 +7,7 @@ from media_download_service.jobs import DownloadJobCoordinator, InMemoryDownload
 
 class Settings:
     internal_service_token = "test-token"
+    replicate_api_token = "replicate-token"
 
 
 def test_download_endpoint_requires_internal_token(monkeypatch):
@@ -25,6 +26,94 @@ def test_inspect_endpoint_requires_internal_token(monkeypatch):
         json={"url": "https://www.youtube.com/watch?v=abc"},
     )
     assert response.status_code == 401
+
+
+def test_background_removal_endpoint_requires_internal_token(monkeypatch):
+    monkeypatch.setattr(main, "get_settings", lambda: Settings())
+    response = TestClient(main.app).post(
+        "/v1/background-removals",
+        json={
+            "jobId": "2d05763e-faa5-495f-979f-8852b16ea0c1",
+            "inputKey": "tool-inputs/background-remover/2d05763e-faa5-495f-979f-8852b16ea0c1.png",
+        },
+    )
+    assert response.status_code == 401
+
+
+def test_background_removal_endpoint_rejects_unowned_object_names(monkeypatch):
+    monkeypatch.setattr(main, "get_settings", lambda: Settings())
+    response = TestClient(main.app).post(
+        "/v1/background-removals",
+        headers={"X-Internal-Service-Token": "test-token"},
+        json={
+            "jobId": "2d05763e-faa5-495f-979f-8852b16ea0c1",
+            "inputKey": "../private/input.png",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_background_removal_endpoint_requires_job_owned_input_key(monkeypatch):
+    monkeypatch.setattr(main, "get_settings", lambda: Settings())
+    response = TestClient(main.app).post(
+        "/v1/background-removals",
+        headers={"X-Internal-Service-Token": "test-token"},
+        json={
+            "jobId": "2d05763e-faa5-495f-979f-8852b16ea0c1",
+            "inputKey": "tool-inputs/background-remover/3d05763e-faa5-495f-979f-8852b16ea0c2.png",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_background_removal_endpoint_returns_a_private_r2_result(monkeypatch):
+    monkeypatch.setattr(main, "get_settings", lambda: Settings())
+    monkeypatch.setattr(
+        main,
+        "_remove_background_and_store",
+        lambda request, settings: {
+            "jobId": str(request.jobId),
+            "status": "ready",
+            "objectKey": "tool-results/background-remover/job.png",
+            "downloadUrl": "https://signed.example.test/result.png",
+            "sizeBytes": 42,
+        },
+    )
+
+    response = TestClient(main.app).post(
+        "/v1/background-removals",
+        headers={"X-Internal-Service-Token": "test-token"},
+        json={
+            "jobId": "2d05763e-faa5-495f-979f-8852b16ea0c1",
+            "inputKey": "tool-inputs/background-remover/2d05763e-faa5-495f-979f-8852b16ea0c1.png",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "jobId": "2d05763e-faa5-495f-979f-8852b16ea0c1",
+        "status": "ready",
+        "objectKey": "tool-results/background-remover/job.png",
+        "downloadUrl": "https://signed.example.test/result.png",
+        "sizeBytes": 42,
+    }
+
+
+def test_background_removal_endpoint_hides_provider_details(monkeypatch):
+    monkeypatch.setattr(main, "get_settings", lambda: Settings())
+    monkeypatch.setattr(main, "_remove_background_and_store", lambda request, settings: 1 / 0)
+
+    response = TestClient(main.app).post(
+        "/v1/background-removals",
+        headers={"X-Internal-Service-Token": "test-token"},
+        json={
+            "jobId": "2d05763e-faa5-495f-979f-8852b16ea0c1",
+            "inputKey": "tool-inputs/background-remover/2d05763e-faa5-495f-979f-8852b16ea0c1.png",
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Unable to remove the image background right now."}
 
 
 def test_inspect_endpoint_hides_provider_verification_details(monkeypatch):

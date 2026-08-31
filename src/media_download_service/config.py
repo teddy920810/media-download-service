@@ -17,6 +17,7 @@ class Settings:
     r2_secret_access_key: str
     r2_bucket: str
     r2_endpoint: str
+    replicate_api_token: str | None = None
 
 
 def get_settings() -> Settings:
@@ -38,4 +39,5 @@ def get_settings() -> Settings:
         r2_secret_access_key=required["R2_SECRET_ACCESS_KEY"] or "",
         r2_bucket=required["R2_BUCKET"] or "",
         r2_endpoint=required["R2_ENDPOINT"] or "",
+        replicate_api_token=os.getenv("REPLICATE_API_TOKEN") or None,
     )
