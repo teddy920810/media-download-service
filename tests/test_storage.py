@@ -62,5 +62,37 @@ def test_background_tool_uses_private_signed_input_and_byte_uploads():
 
 def test_creates_short_lived_download_url():
     client = StubS3()
-    assert R2Storage(settings(), client).temporary_download_url("trials/job-1/video.mp4") == "https://download.example.test/signed"
-    assert client.presigns == [({"Bucket": "download", "Key": "trials/job-1/video.mp4"}, 900)]
+    assert (
+        R2Storage(settings(), client).temporary_download_url(
+            "trials/job-1/video.mp4",
+            download_name="streamnest-video.mp4",
+        )
+        == "https://download.example.test/signed"
+    )
+    assert client.presigns == [
+        (
+            {
+                "Bucket": "download",
+                "Key": "trials/job-1/video.mp4",
+                "ResponseContentDisposition": (
+                    'attachment; filename="streamnest-video.mp4"; '
+                    "filename*=UTF-8''streamnest-video.mp4"
+                ),
+            },
+            900,
+        )
+    ]
+
+
+def test_download_filename_is_sanitized_before_signing():
+    client = StubS3()
+
+    R2Storage(settings(), client).temporary_download_url(
+        "tool-results/background-remover/job.png",
+        download_name='unsafe\r\nname".png',
+    )
+
+    params, _ = client.presigns[0]
+    assert params["ResponseContentDisposition"] == (
+        'attachment; filename="unsafe__name_.png"; filename*=UTF-8\'\'unsafe__name_.png'
+    )
