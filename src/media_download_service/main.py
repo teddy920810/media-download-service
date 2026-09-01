@@ -152,7 +152,10 @@ def _download_and_store(request: DownloadRequest, settings: Settings) -> dict[st
         return {
             "jobId": str(request.jobId),
             "objectKey": object_key,
-            "downloadUrl": storage.temporary_download_url(object_key),
+            "downloadUrl": storage.temporary_download_url(
+                object_key,
+                download_name=f"streamnest-video{path.suffix.lower()}",
+            ),
             "sizeBytes": result["sizeBytes"],
         }
 
@@ -176,6 +179,9 @@ def _remove_background_and_store(
         "jobId": str(request.jobId),
         "status": "ready",
         "objectKey": result_key,
-        "downloadUrl": storage.temporary_download_url(result_key),
+        "downloadUrl": storage.temporary_download_url(
+            result_key,
+            download_name="streamnest-background-removed.png",
+        ),
         "sizeBytes": size,
     }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import boto3
 from botocore.client import BaseClient
@@ -45,9 +46,22 @@ class R2Storage:
             ExpiresIn=expires_in_seconds,
         )
 
-    def temporary_download_url(self, key: str, expires_in_seconds: int = 15 * 60) -> str:
+    def temporary_download_url(
+        self,
+        key: str,
+        expires_in_seconds: int = 15 * 60,
+        download_name: str = "streamnest-download",
+    ) -> str:
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", download_name)
+        disposition = (
+            f'attachment; filename="{safe_name}"; filename*=UTF-8\'\'{safe_name}'
+        )
         return self.client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": self.bucket, "Key": key},
+            Params={
+                "Bucket": self.bucket,
+                "Key": key,
+                "ResponseContentDisposition": disposition,
+            },
             ExpiresIn=expires_in_seconds,
         )
