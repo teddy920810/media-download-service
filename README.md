@@ -22,12 +22,21 @@ The same private service also exposes an authenticated background-removal bounda
 ```sh
 python -m venv .venv
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -c requirements.lock -e ".[dev]"
+python -m pip check
 python -m pytest
 python -m uvicorn media_download_service.main:app --reload
 ```
 
 Activate the virtual environment using your platform shell before running the commands. The application itself is platform-independent and is deployed in Docker.
+
+Docker installs runtime dependencies from `requirements.lock`, then installs the application without resolving dependencies again. CI and local development constrain runtime dependencies to the same versions. Keep the lock's transitive dependencies and platform markers complete when updating it; the dependency-security tests check the installed dependency graph, including extras.
+
+The runtime lock preserves the application dependencies observed in the serving Cloud Run image on 2026-10-22, including yt-dlp 2026.8.19, while upgrading certifi and urllib3 for the security fixes below. The yt-dlp minimum also retains that verified production baseline for installations outside the lock.
+
+`certifi>=2026.10.19` is the compatibility-preserving security floor for [GHSA-6q48-6c7w-9gw2](https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2): 2026.10.18 removed all emSign roots, and 2026.10.19 restored the unaffected roots while leaving the compromised ECC G3 root excluded. `urllib3>=2.8.0` also addresses the existing lock's [chunk-size buffering](https://github.com/urllib3/urllib3/security/advisories/GHSA-vxq7-64xx-v4gw), [Deflate streaming](https://github.com/urllib3/urllib3/security/advisories/GHSA-gh4c-6fx4-qh6g), and [HTTPS proxy TLS](https://github.com/urllib3/urllib3/security/advisories/GHSA-8988-9cw3-xx77) advisories. Keep TLS and hostname verification enabled.
+
+A passing source test or rebuilt image does not establish the versions in an already-running Cloud Run revision; inspect that revision's immutable image separately before declaring production remediated.
 
 Copy `.env.example` to `.env` and set only local credentials. The R2 bucket for this product is `download`; it must remain private. Never commit either environment file.
 

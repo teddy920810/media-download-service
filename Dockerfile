@@ -15,9 +15,13 @@ RUN apt-get update \
     && useradd --create-home --uid 10001 app \
     && rm -rf /var/lib/apt/lists/*
 
+COPY requirements.lock ./
+RUN python -m pip install --no-cache-dir -r requirements.lock
+
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir .
+RUN python -m pip install --no-cache-dir --no-deps . \
+    && python -m pip check
 
 USER app
 
